@@ -180,7 +180,7 @@ int main(int argc, char *argv[]) {
 	long prog_len = ftell(fp) / sizeof(uint16_t);
 	rewind(fp);
 	if (prog_len > 0x1000) {
-		fprintf(stderr, "%s is an invalid executable. It is too large. Maximum size is 4096 words or 8192 bytes. (Program size is %ld words.)", path, prog_len);
+		fprintf(stderr, "%s is an invalid executable. It is too large. Maximum size is 4096 words or 8192 bytes. (Program size is %ld words.)\n", path, prog_len);
 		fclose(fp);
 		return 1;
 	}
