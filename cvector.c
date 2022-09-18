@@ -34,8 +34,7 @@ Vec *Vec_create(size_t obj_size) {
 	return Vec_create_with_cap(obj_size, 4);
 }
 
-/* This function does NOT support deep copies, to make it easier to support stack arrays.
- * If you need a deep copy, you must do it yourself. */
+// Create a Vec with the contents of an array. Supports deep copies.
 Vec *Vec_create_from_array(void *src, Vec_copy_t copy_func, size_t obj_size, size_t len) {
 	Vec *ret = Vec_create(obj_size);
 	if (Vec_resize(ret, len)) {
@@ -104,12 +103,12 @@ static int Vec_realloc(Vec *this) {
 		internal->allocated = !!new_array;
 	} else if (this->len <= internal->cap) {
 		internal->cap = this->len == 1 ? 2 : this->len + log2i(this->len);
-		new_array = reallocarray(this->data, internal->cap, internal->obj_size);
+		new_array = realloc(this->data, internal->cap * internal->obj_size);
 	} else if (
 		this->len > internal->initial_cap &&
 		this->len < internal->cap - log2i(internal->cap) * 2
 	) {
-		new_array = reallocarray(this->data, internal->cap = this->len, internal->obj_size);
+		new_array = realloc(this->data, (internal->cap = this->len) * internal->obj_size);
 	}
 
 	if (new_array == NULL) {
