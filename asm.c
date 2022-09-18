@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -32,6 +33,8 @@ struct Token {
 static const char *DATA_SPEC[] = {
 	"Hex", "Dec", NULL
 };
+
+static const char *HELP = "Usage: %s [infile] -o [outfile]\n";
 
 static ssize_t index_table(char *str, const char *table[]) {
 	for (ssize_t i = 0; table[i]; ++i)
@@ -171,9 +174,19 @@ static void assemble(Vec *symbols, Vec *tokens, const char *path) {
 				if (!strcmp(tok->token, "ORG") && (++tok)->type != VALUE) {
 					fputs("Invalid use of \"ORG\" detected.\n", stderr);
 					exit(1);
-				} else addr = strtoul(tok->token, NULL, radix) - 1;
+				} else {
+					uint16_t addr_old = addr;
+					addr = strtoul(tok->token, NULL, 16) - 1;
+					if (addr < addr_old) {
+						fprintf(stderr, 
+							"ORG used to jump to an address lower than the current one. Only in-order uses of ORG are valid.\n"
+							"Old address: %x\nNew address: %x\n", addr_old, addr
+						);
+						exit(1);
+					}
+				}
 			} break;
-			// If return value isn't zero, the only possibility is decimal.
+			// If the index isn't zero, the only possibility is decimal.
 			case DATA: if (index_table(tok->token, DATA_SPEC)) radix = 10; break;
 			case INST: word |= index_table(tok->token, INSTRUCTIONS) << 12; break;
 			case VALUE: {
@@ -194,16 +207,50 @@ static void assemble(Vec *symbols, Vec *tokens, const char *path) {
 	fclose(fp);
 }
 
+static char *change_ext(const char *path) {
+	// find .
+	size_t len = strlen(path);
+	const char *path_end = path + len;
+	while (*path_end != '.' && path_end != path) --path_end;
+	if (path_end == path) path_end = path + len; // no extension, go back.
+	
+	// find lengths of things
+	size_t len_no_ext = len - (path_end - path - 1);
+	size_t new_len = len_no_ext + 5;
+	
+	// create new string
+	char *new_path = malloc(new_len + 1);
+	memcpy(new_path, path, len_no_ext);
+	strcpy(new_path + len_no_ext, ".mex2");
+	
+	return new_path;
+}
+
 int main(int argc, char *argv[]) {
-	if (!argv[1]) {
-		fputs("No assembly file provided\n", stderr);
+	char *in_path = NULL, *out_path = NULL;
+	for (char **arg = argv + 1; *arg; ++arg) {
+		if (!strcmp(*arg, "-o")) {
+			if (!*++arg) {
+				puts("No output file provided.");
+				return 1;
+			} else out_path = *arg;
+		} else in_path = *arg;
+	}
+	
+	if (!in_path) {
+		printf(HELP, argv[0]);
 		return 1;
 	}
 	
-	char *path = argv[1];
-	FILE *fp = fopen(path, "r");
+	bool generated_path = false;
+	if (!out_path) {
+		generated_path = true;
+		out_path = change_ext(in_path);
+	}
+	
+	FILE *fp = fopen(in_path, "r");
 	if (!fp) {
-		fprintf(stderr, "Error opening %s: %s\n", path, strerror(errno));
+		fprintf(stderr, "Error opening %s: %s\n", in_path, strerror(errno));
 		return 1;
 	}
 	
@@ -213,10 +260,11 @@ int main(int argc, char *argv[]) {
 #if MARIE_DEBUG
 	print_tokens(tokens);
 #endif
-	assemble(symbols, tokens, "a.out");
+	assemble(symbols, tokens, out_path);
 	
 	// free resources
 	Vec_destroy(tokens, &free_tokens);
 	Vec_destroy(symbols, &free_symbols);
+	if (generated_path) free(out_path);
 	return 0;
 }
