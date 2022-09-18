@@ -8,7 +8,7 @@ struct vec_internal {
 	Vec ext;
 	size_t cap, obj_size, initial_cap;
 	const char *error;
-	bool allocated;
+	bool allocated, data_popped;
 	char popbuf[]; // intermediate buffer for popped items.
 };
 
@@ -62,8 +62,6 @@ void Vec_destroy(Vec *this, Vec_free_t free_func) {
 			obj < this->data + internal->obj_size * this->len;
 			obj += internal->obj_size
 		) free_func(obj);
-
-		if (internal->popbuf != NULL) free_func(internal->popbuf);
 	}
 	
 	free(this->data);
@@ -190,6 +188,11 @@ void *Vec_peek(Vec *this) {
 	return Vec_get(this, this->len - 1);
 }
 
+/* Pops the last item from the vector and removes it.
+ * If you're going to use this, copy the result IMMEDIATELY.
+ * This copies the popped item to an intermediate buffer,
+ * which will be overwritten ever time an item is popped.
+ * If this data needs to be freed, you must do it yourself! */
 void *Vec_pop(Vec *this) {
 	struct vec_internal *internal = (struct vec_internal*) this;
 

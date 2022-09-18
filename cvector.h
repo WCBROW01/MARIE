@@ -63,7 +63,8 @@ void *Vec_peek(Vec *this);
 /* Pops the last item from the vector and removes it.
  * If you're going to use this, copy the result IMMEDIATELY.
  * This copies the popped item to an intermediate buffer,
- * which will be overwritten ever time an item is popped. */
+ * which will be overwritten ever time an item is popped.
+  * If this data needs to be freed, you must do it yourself! */
 void *Vec_pop(Vec *this);
 
 // Return the error status of the vector as a string.
