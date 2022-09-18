@@ -93,6 +93,7 @@ static Vec *tokenize(FILE *fp, Vec *symbols) {
 		strtok(str, "/"); // Remove comments
 		strtok(str, "\r\n"); // remove newline characters
 		strtok(NULL, "\r\n");
+		size_t len = strlen(str);
 		
 		// empty line
 		if (!*str || *str == '/' || *str == '\r' || *str == '\n') --addr;
@@ -126,8 +127,11 @@ static Vec *tokenize(FILE *fp, Vec *symbols) {
 				}
 				
 				str = token_end;
+				
 				// Make sure loop actually ends if we're done
-				TRIM_LEADING_WHITESPACE(str);
+				// macOS strtok_r sets the saveptr null, glibc doesn't do this.
+				if (str) TRIM_LEADING_WHITESPACE(str);
+				else break;
 			}
 			
 			add_token(tokens, "NEXT", NEXT);
