@@ -98,7 +98,7 @@ static void execute(unsigned int flags) {
 				running = 0;
 			} break;
 			case SKIPCOND: {
-				switch ((cpu.MAR & 0xC00) >> 10) { // bits 10 and 11 of MAR
+				switch ((cpu.IR & 0xC00) >> 10) { // bits 10 and 11 of MAR
 					case 0: if (cpu.AC < 0) ++cpu.PC; break;
 					case 1: if (cpu.AC == 0) ++cpu.PC; break;
 					case 2: if (cpu.AC > 0) ++cpu.PC;
