@@ -74,11 +74,28 @@ static void add_token(Vec *tokens, char *token, enum TokenType type) {
 	Vec_push(tokens, &tok);
 }
 
+#if MARIE_DEBUG
+static void print_token(struct Token *tok) {
+	printf("Token: \"%s\", Type: %d\n", tok->token, tok->type);
+}
+
+static void print_tokens(Vec *tokens) {\
+	for (
+		struct Token *tok = tokens->data;
+		tok < (struct Token *) tokens->data + tokens->len;
+		++tok
+	) print_token(tok);
+}
+#endif
+
 #define TRIM_LEADING_WHITESPACE(str) for (; isblank(*(str)); ++(str))
 
 static Vec *tokenize(FILE *fp, Vec *symbols) {
 	char line[256]; // I hope your symbols aren't this long.
 	char *str = line; // create pointer to more easily mutate the string
+#if MARIE_DEBUG
+	puts("Tokenizing");
+#endif
 	Vec *tokens = Vec(struct Token);
 	
 	for (uint16_t addr = 0; fgets(line, 256, fp); ++addr) {
@@ -139,6 +156,10 @@ static Vec *tokenize(FILE *fp, Vec *symbols) {
 	}
 	
 	end:
+#if MARIE_DEBUG
+	print_tokens(tokens);
+#endif
+
 	// sort symbol list
 	qsort(symbols->data, symbols->len, sizeof(struct Symbol), &symbol_cmp);
 	return tokens;
@@ -152,27 +173,25 @@ static void free_symbols(void *ptr) {
 	free(((struct Symbol *) ptr)->key);
 }
 
-#if MARIE_DEBUG
-static void print_tokens(Vec *tokens) {\
-	for (
-		struct Token *tok = tokens->data;
-		tok < (struct Token *) tokens->data + tokens->len;
-		++tok
-	) printf("Token: \"%s\", Type: %d\n", tok->token, tok->type);
-}
-#endif
-
 static void assemble(Vec *symbols, Vec *tokens, const char *path) {
-	uint16_t program[4096];
+	uint16_t program[4096] = {0};
 	uint16_t addr = 0;
 	uint16_t word = 0;
 	int radix = 16;
+	bool org_changed = false;
+	
+#if MARIE_DEBUG
+	puts("Assembling");
+#endif
 	
 	for (
 		struct Token *tok = tokens->data;
 		tok < (struct Token *) tokens->data + tokens->len;
 		++tok
 	) {
+#if MARIE_DEBUG
+		print_token(tok);
+#endif
 		switch (tok->type) {
 			case DIRECTIVE: {
 				if (!strcmp(tok->token, "ORG") && (++tok)->type != VALUE) {
@@ -180,14 +199,14 @@ static void assemble(Vec *symbols, Vec *tokens, const char *path) {
 					exit(1);
 				} else {
 					uint16_t addr_old = addr;
-					addr = strtoul(tok->token, NULL, 16) - 1;
+					addr = strtoul(tok->token, NULL, 16);
 					if (addr < addr_old) {
 						fprintf(stderr, 
 							"ORG used to jump to an address lower than the current one. Only in-order uses of ORG are valid.\n"
 							"Old address: %x\nNew address: %x\n", addr_old, addr
 						);
 						exit(1);
-					}
+					} else org_changed = true;
 				}
 			} break;
 			// If the index isn't zero, the only possibility is decimal.
@@ -200,10 +219,14 @@ static void assemble(Vec *symbols, Vec *tokens, const char *path) {
 				radix = 16;
 			} break;
 			case NEXT: {
-				program[addr++] = word;
+				if (!org_changed) program[addr++] = word;
+				else org_changed = false;
 				word = 0;
 			}
 		}
+#if MARIE_DEBUG
+		printf("Addr: %x, Word: %x\n", addr, word);
+#endif		
 	}
 	
 	FILE *fp = fopen(path, "w");
@@ -218,11 +241,7 @@ static char *change_ext(const char *path) {
 	while (*path_end != '.' && path_end != path) --path_end;
 	
 	// find lengths of things
-	size_t len_no_ext;
-	if (path_end == path) {
-		path_end = path + len; // no extension, go back.
-		len_no_ext = len;
-	} else len_no_ext = len - (path_end - path - 1);
+	size_t len_no_ext = path == path_end ? len : path_end - path;
 	size_t new_len = len_no_ext + 5;
 	
 	// create new string
@@ -264,9 +283,6 @@ int main(int argc, char *argv[]) {
 	Vec *symbols = Vec(struct Symbol);
 	Vec *tokens = tokenize(fp, symbols);
 	fclose(fp);
-#if MARIE_DEBUG
-	print_tokens(tokens);
-#endif
 	assemble(symbols, tokens, out_path);
 	
 	// free resources
