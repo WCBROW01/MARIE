@@ -216,10 +216,13 @@ static char *change_ext(const char *path) {
 	size_t len = strlen(path);
 	const char *path_end = path + len;
 	while (*path_end != '.' && path_end != path) --path_end;
-	if (path_end == path) path_end = path + len; // no extension, go back.
 	
 	// find lengths of things
-	size_t len_no_ext = len - (path_end - path - 1);
+	size_t len_no_ext;
+	if (path_end == path) {
+		path_end = path + len; // no extension, go back.
+		len_no_ext = len;
+	} else len_no_ext = len - (path_end - path - 1);
 	size_t new_len = len_no_ext + 5;
 	
 	// create new string
