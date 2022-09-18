@@ -1,0 +1,28 @@
+/ Hello World!
+	ORG 100
+Getch,	LoadI Chptr / Load the character found at the character pointer.
+	Skipcond 400 / If AC is zero, don't jump and halt the program.
+	Jump Outp
+	Halt
+Outp,	Output / Output character
+	Load Chptr
+	Add One / Increment character pointer
+	Store Chptr
+	Jump Getch / Restart loop
+One,	Hex 0001
+Chptr,	Hex 10B
+String,	Dec 072 /H
+	Dec 101 /e
+	Dec 108 /l
+	Dec 108 /l
+	Dec 111 /o
+	Dec 032 /[space]
+	Dec 087 /W
+	Dec 111 /o
+	Dec 114 /r
+	Dec 108 /l
+	Dec 100 /d
+	Dec 033 /!
+	Dec 010 /[line feed]
+	Dec 000 /[null]
+END
