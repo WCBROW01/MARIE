@@ -151,6 +151,7 @@ int main(int argc, char *argv[]) {
 	for (char **arg = argv + 1; *arg; ++arg) {
 		if (!strcmp(*arg, "-h") || !strcmp(*arg, "--help")) {
 			printf(HELP, argv[0]);
+			return 0;
 		} else if (!strcmp(*arg, "-r") || !strcmp(*arg, "--regs")) {
 			flags |= FLAG_REGS;
 		} else if (!strcmp(*arg, "-s") || !strcmp(*arg, "--step")) {
