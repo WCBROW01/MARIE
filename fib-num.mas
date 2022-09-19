@@ -1,0 +1,188 @@
+/ -- calling convention --
+/ calling:          arg0 | (prev stack)
+/ header:  retaddr, arg0 | (prev stack)
+/ trailer:      retvalue | (prev stack)
+
+ORG 00
+    Zero, Hex 00
+    One, Hex 01
+    Two, Hex 02
+    Three, Hex 03
+
+    Tmp, Hex 00
+    Tmp2, Hex 00
+    Tmp3, Hex 00
+
+    // Jump | Fib (see below)
+    JmpToFib, Hex 9200
+    // for adding the Jump instr to an address
+    JumpInstr, Hex 9000
+
+    // these two are used to jump with JnS
+    ProcJump, Hex 00
+    ProcJumpInstr, Hex 00
+
+ORG 100
+    / read
+    /   Input
+    Beginning, Load Counter
+
+    / stackpush(ac) as arg0
+        StoreI StackPtr
+        Load StackPtr
+        Subt One
+        Store StackPtr
+
+    / tmp = call(fib)
+        / call
+            Load JmpToFib
+            Store ProcJumpInstr
+            JnS ProcJump
+        / tmp = stackpop()
+            Load StackPtr
+            Add One
+            Store StackPtr
+            LoadI StackPtr
+            Store Tmp
+
+    / print(tmp)
+        Load Tmp
+        Output
+
+    / a little bit of looping :3
+    Load Counter
+    Add One
+    Store Counter
+    Subt CounterMax
+    Skipcond 400
+        Jump Beginning
+        Halt
+
+    Counter, Hex 0
+    CounterMax, Hex 10
+
+ORG 200 / fib
+    / return addr (tmp) = proc jump
+        Load ProcJump
+        Store Tmp
+    / stackpush(tmp)
+        Load Tmp
+        StoreI StackPtr
+        Load StackPtr
+        Subt One
+        Store StackPtr
+    / arg0 (tmp, ac) = stack[2]
+        Load StackPtr
+        Add Two
+        Store Tmp
+        LoadI Tmp
+        Store Tmp
+    / if arg0 <= 1 return arg0
+        / n - 1 > 0: skip if positive
+        Subt One
+        Skipcond 800
+    / arg0 > 1 not true
+        Jump FnFibExitCond / see else
+    / -- arg0 > 1 true - recursion
+
+        / tmp = tmp - 1
+            Load Tmp
+            Subt One
+            Store Tmp
+        / stackpush(tmp) as arg0
+            StoreI StackPtr
+            Load StackPtr
+            Subt One
+            Store StackPtr
+
+        / tmp = call(fib)
+            / call
+                Load JmpToFib
+                Store ProcJumpInstr
+                JnS ProcJump
+            / actually we want to keep this on the stack for later
+            / tmp = stackpop()
+            /   Load StackPtr
+            /   Add One
+            /   Store StackPtr
+            /   LoadI StackPtr
+            /   Store Tmp
+
+        / tmp = arg0 (stack[3])
+            Load StackPtr
+            Add Three
+            Store Tmp
+            LoadI Tmp
+            Store Tmp
+        / tmp = tmp - 2
+            Load Tmp
+            Subt Two
+            Store Tmp
+        / stackpush(tmp) as arg0
+            StoreI StackPtr
+            Load StackPtr
+            Subt One
+            Store StackPtr
+
+        / tmp = call(fib)
+            / call
+                Load JmpToFib
+                Store ProcJumpInstr
+                JnS ProcJump
+            / tmp = stackpop()
+                Load StackPtr
+                Add One
+                Store StackPtr
+                LoadI StackPtr
+                Store Tmp
+
+        / tmp2 = stackpop()
+            Load StackPtr
+            Add One
+            Store StackPtr
+            LoadI StackPtr
+            Store Tmp2
+
+        / tmp = tmp + tmp2
+            Load Tmp
+            Add Tmp2
+            Store Tmp
+        / return
+            / retaddr (tmp3) = stackpop()
+                Load StackPtr
+                Add One
+                Store StackPtr
+                LoadI StackPtr
+                Store Tmp3
+            / replace arg0 on stack with retval
+            / stack[1] = tmp
+                Load StackPtr
+                Add One
+                Store Tmp2
+                Load Tmp
+                StoreI Tmp2
+            / return
+                Load Tmp3
+                Add JumpInstr
+                Store ProcJumpInstr
+                JnS ProcJump
+
+    / -- else - exit condition
+        / retaddr (tmp) = stackpop()
+            FnFibExitCond, Load StackPtr
+            Add One
+            Store StackPtr
+            LoadI StackPtr
+            Store Tmp
+        / we want to return arg0 - keep arg0 on the stack as-is
+        / return
+            Load Tmp
+            Add JumpInstr
+            Store ProcJumpInstr
+            JnS ProcJump
+
+
+ORG FF0
+    / points to *above* the stack
+    / i.e. stackptr+1 contains the top value
+    StackPtr, Hex FED
