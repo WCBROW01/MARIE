@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 
 #include "cvector.h"
 #include "instructions.h"
@@ -13,20 +14,20 @@
 #define MARIE_DEBUG 0
 #endif
 
-// TODO: Assemble instructions and directives before 2nd pass
-// rather than keeping them as strings (to save memory and execution time)
-
 struct Symbol {
 	char *key;
 	uint16_t addr;
 };
 
-enum TokenType {
-	DIRECTIVE, DATA, INST, VALUE, NEXT
-};
+enum TokenType {DIRECTIVE, DATA, INST, VALUE, NEXT};
+enum Directive {ORG};
+enum Data {HEX, DEC};
 
 struct Token {
-	char *token;
+	union {
+		char *str;
+		int data;
+	} value;
 	enum TokenType type;
 };
 
@@ -34,7 +35,7 @@ static const char *DATA_SPEC[] = {
 	"Hex", "Dec", NULL
 };
 
-static const char *HELP = "Usage: %s [infile] -o [outfile]\n";
+static const char *HELP = "Usage: %s [infile] [OPTIONS] -o [outfile]\n\t-t\tDisplay time to assemble (in \u03BCs)\n";
 
 static ssize_t index_table(char *str, const char *table[]) {
 	for (ssize_t i = 0; table[i]; ++i)
@@ -65,18 +66,17 @@ static int lookup_symbol(Vec *symbols, char *sym) {
 	return res ? res->addr : -1;
 }
 
-static void add_token(Vec *tokens, char *token, enum TokenType type) {
-	struct Token tok = {
-		.token = token ? strdup(token) : NULL,
-		.type = type
-	};
-	
-	Vec_push(tokens, &tok);
-}
-
 #if MARIE_DEBUG
 static void print_token(struct Token *tok) {
-	printf("Token: \"%s\", Type: %d\n", tok->token, tok->type);
+	const char *str;
+	switch (tok->type) {
+		case DIRECTIVE: str = "ORG"; break;
+		case INST: str = INSTRUCTIONS[tok->value.data]; break;
+		case VALUE: str = tok->value.str; break;
+		case NEXT: str = "NEXT"; break;
+	}
+	if (str) printf("Token: \"%s\", Type: %d\n", str, tok->type);
+	else printf("Token: \"%x\", Type: %d\n", tok->value.data, tok->type);
 }
 
 static void print_tokens(Vec *tokens) {\
@@ -105,53 +105,59 @@ static Vec *tokenize(FILE *fp, Vec *symbols) {
 			exit(1);
 		}
 	
-		str = line; // reset pointer to the beginning pf the line buffer		
+		str = line; // reset pointer to the beginning of the line buffer		
 		TRIM_LEADING_WHITESPACE(str);
-		strtok(str, "/"); // Remove comments
-		strtok(str, "\r\n"); // remove newline characters
-		strtok(NULL, "\r\n");
-		size_t len = strlen(str);
+		if (!*str || *str == '/' || *str == '\r' || *str == '\n') { // empty line
+			--addr;
+		} else {
+			char *comment = strchr(str, '/');
+			if (comment) *comment = '\0';
+			else {
+				size_t len = strlen(str);
+				// remove newline characters
+				if (len > 1 && str[len - 2] == '\r' || str[len - 2] == '\n') str[len - 2] = '\0';
+				else if (len > 0 && str[len - 1] == '\n' || str[len - 1] == '\r') str[len - 1] = '\0';
+			}
 		
-		// empty line
-		if (!*str || *str == '/' || *str == '\r' || *str == '\n') --addr;
-		else {
 			// Find the end of a symbol if there is one and catalog it.
 			char *symbol_end = strchr(str, ',');
 			if (symbol_end) {
 				*symbol_end = '\0';
 				add_symbol(symbols, str, addr);
 				str = symbol_end + 1;
+				TRIM_LEADING_WHITESPACE(str);
 			}
 			
-			while (*str) {
-				TRIM_LEADING_WHITESPACE(str);
-				
-				char *token_end;
-				strtok_r(str, " \t", &token_end); // delimit at whitespace
-				
+			struct Token token;
+			strtok(str, " \t"); // delimit at whitespace
+			while (str && *str) {
 				if (!strcmp(str, "ORG")) {
 					addr = strtoul(str + 4, NULL, 16) - 1;
-					add_token(tokens, "ORG", DIRECTIVE);
+					token.type = DIRECTIVE;
+					token.value.data = ORG;
+					Vec_push(tokens, &token);
 				} else if (!strcmp(str, "END")) {
-					add_token(tokens, "NEXT", NEXT);
+					token.type = NEXT;
+					Vec_push(tokens, &token);
 					goto end; // forcefully end
-				} else if (index_table(str, DATA_SPEC) != -1) {
-					add_token(tokens, str, DATA);
-				} else if (index_table(str, INSTRUCTIONS) != -1) {
-					add_token(tokens, str, INST);
+				} else if ((token.value.data = index_table(str, DATA_SPEC)) != -1) {
+					token.type = DATA;
+					Vec_push(tokens, &token);
+				} else if ((token.value.data = index_table(str, INSTRUCTIONS)) != -1) {
+					token.type = INST;
+					Vec_push(tokens, &token);
 				} else {
-					add_token(tokens, str, VALUE);
+					token.type = VALUE;
+					token.value.str = strdup(str);
+					Vec_push(tokens, &token);
 				}
 				
-				str = token_end;
-				
-				// Make sure loop actually ends if we're done
-				// macOS strtok_r sets the saveptr null, glibc doesn't do this.
+				str = strtok(NULL, " \t");
 				if (str) TRIM_LEADING_WHITESPACE(str);
-				else break;
 			}
 			
-			add_token(tokens, "NEXT", NEXT);
+			token.type = NEXT;
+			Vec_push(tokens, &token);
 		}
 	}
 	
@@ -166,7 +172,8 @@ static Vec *tokenize(FILE *fp, Vec *symbols) {
 }
 
 static void free_tokens(void *ptr) {
-	free(((struct Token *) ptr)->token);
+	struct Token *tok = ptr;
+	if (tok->type == VALUE) free(tok->value.str);
 }
 
 static void free_symbols(void *ptr) {
@@ -194,12 +201,12 @@ static void assemble(Vec *symbols, Vec *tokens, const char *path) {
 #endif
 		switch (tok->type) {
 			case DIRECTIVE: {
-				if (!strcmp(tok->token, "ORG") && (++tok)->type != VALUE) {
+				if ((++tok)->type != VALUE) {
 					fputs("Invalid use of \"ORG\" detected.\n", stderr);
 					exit(1);
 				} else {
 					uint16_t addr_old = addr;
-					addr = strtoul(tok->token, NULL, 16);
+					addr = strtoul(tok->value.str, NULL, 16);
 					if (addr < addr_old) {
 						fprintf(stderr, 
 							"ORG used to jump to an address lower than the current one. Only in-order uses of ORG are valid.\n"
@@ -209,13 +216,13 @@ static void assemble(Vec *symbols, Vec *tokens, const char *path) {
 					} else org_changed = true;
 				}
 			} break;
-			// If the index isn't zero, the only possibility is decimal.
-			case DATA: if (index_table(tok->token, DATA_SPEC)) radix = 10; break;
-			case INST: word |= index_table(tok->token, INSTRUCTIONS) << 12; break;
+			// 0: hex, 1: dec
+			case DATA: if (tok->value.data) radix = 10; break;
+			case INST: word = tok->value.data << 12; break;
 			case VALUE: {
-				int lookup_res = lookup_symbol(symbols, tok->token);
+				int lookup_res = lookup_symbol(symbols, tok->value.str);
 				if (lookup_res != -1) word |= lookup_res;
-				else word |= strtoul(tok->token, NULL, radix);
+				else word |= strtoul(tok->value.str, NULL, radix);
 				radix = 16;
 			} break;
 			case NEXT: {
@@ -254,8 +261,10 @@ static char *change_ext(const char *path) {
 
 int main(int argc, char *argv[]) {
 	char *in_path = NULL, *out_path = NULL;
+	bool profile_time = false;
 	for (char **arg = argv + 1; *arg; ++arg) {
-		if (!strcmp(*arg, "-o")) {
+		if (!strcmp(*arg, "-t")) profile_time = true; 
+		else if (!strcmp(*arg, "-o")) {
 			if (!*++arg) {
 				puts("No output file provided.");
 				return 1;
@@ -274,6 +283,7 @@ int main(int argc, char *argv[]) {
 		out_path = change_ext(in_path);
 	}
 	
+	clock_t start = clock();
 	FILE *fp = fopen(in_path, "r");
 	if (!fp) {
 		fprintf(stderr, "Error opening %s: %s\n", in_path, strerror(errno));
@@ -284,6 +294,10 @@ int main(int argc, char *argv[]) {
 	Vec *tokens = tokenize(fp, symbols);
 	fclose(fp);
 	assemble(symbols, tokens, out_path);
+	clock_t end = clock();
+	
+	if (profile_time)
+		printf("Time: %ld\u03BCs\n", (end - start) / (CLOCKS_PER_SEC / 1000000));
 	
 	// free resources
 	Vec_destroy(tokens, &free_tokens);
