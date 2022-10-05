@@ -3,12 +3,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 
-#include "instructions.h"
+#include "shared.h"
 
 enum emu_flags {
 	FLAG_REGS = 1,
-	FLAG_STEP = 2
+	FLAG_STEP = 2,
+	FLAG_TIME = 4
 };
 
 static uint16_t mem[4096]; // 4K words of memory
@@ -25,7 +27,8 @@ static struct CPU {
 const char *HELP = "Usage: %s [OPTIONS] [FILE]\n"
 	"\t-h, --help\tDisplays help page.\n"
 	"\t-r, --regs\tDisplay registers.\n"
-	"\t-s, --step\tRun the machine step by step.\n";
+	"\t-s, --step\tRun the machine step by step.\n"
+	"\t-t, --time\tDisplay execution time\n";
 
 static char *disassemble_instruction(uint16_t ins) {
 	static char buf[16];
@@ -156,9 +159,10 @@ int main(int argc, char *argv[]) {
 			flags |= FLAG_REGS;
 		} else if (!strcmp(*arg, "-s") || !strcmp(*arg, "--step")) {
 			flags |= FLAG_STEP;
+		} else if (!strcmp(*arg, "-t") || !strcmp(*arg, "--time")) {
+			flags |= FLAG_TIME;
 		} else {
 			path = *arg;
-			break;
 		}
 	}
 	
@@ -169,7 +173,6 @@ int main(int argc, char *argv[]) {
 	}
 	
 	FILE *fp = fopen(path, "r");
-	
 	if (!fp) {
 		fprintf(stderr, "Error opening %s: %s\n", path, strerror(errno));
 		return 1;
@@ -193,8 +196,12 @@ int main(int argc, char *argv[]) {
 	
 	fclose(fp);
 	
+	clock_t start = clock();
 	cpu.PC = 0x100;
 	execute(flags);
+	clock_t end = clock();
+	
+	if (flags & FLAG_TIME) print_exec_time(end - start);
 	
 	return 0;
 }

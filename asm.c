@@ -8,7 +8,7 @@
 #include <time.h>
 
 #include "cvector.h"
-#include "instructions.h"
+#include "shared.h"
 
 #ifndef MARIE_DEBUG
 #define MARIE_DEBUG 0
@@ -296,8 +296,7 @@ int main(int argc, char *argv[]) {
 	assemble(symbols, tokens, out_path);
 	clock_t end = clock();
 	
-	if (profile_time)
-		printf("Time: %ld\u03BCs\n", (end - start) / (CLOCKS_PER_SEC / 1000000));
+	if (profile_time) print_exec_time(end - start);
 	
 	// free resources
 	Vec_destroy(tokens, &free_tokens);
