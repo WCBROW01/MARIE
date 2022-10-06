@@ -1,14 +1,14 @@
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "cvector.h"
 
+#define RESIZE_CONSTANT 4
+
 struct vec_internal {
 	Vec ext;
-	size_t cap, obj_size, initial_cap;
+	size_t cap, obj_size;
 	const char *error;
-	bool allocated, data_popped;
 	char popbuf[]; // intermediate buffer for popped items.
 };
 
@@ -22,8 +22,7 @@ Vec *Vec_create_with_cap(size_t obj_size, size_t initial_cap) {
 		},
 		.cap = initial_cap,
 		.obj_size = obj_size,
-		.initial_cap = initial_cap,
-		.allocated = false
+		.error = NULL
 	};
 	
 	return (Vec*) ret;
@@ -31,7 +30,7 @@ Vec *Vec_create_with_cap(size_t obj_size, size_t initial_cap) {
 
 // Takes the object size as a parameter
 Vec *Vec_create(size_t obj_size) {
-	return Vec_create_with_cap(obj_size, 4);
+	return Vec_create_with_cap(obj_size, RESIZE_CONSTANT * 2);
 }
 
 // Create a Vec with the contents of an array. Supports deep copies.
@@ -68,12 +67,6 @@ void Vec_destroy(Vec *this, Vec_free_t free_func) {
 	free(this);
 }
 
-static int log2i(size_t x) {
-	int i;
-	for (i = 0; x > 0; x >>= 1, ++i);
-	return i - 1;
-}
-
 Vec *Vec_copy(Vec *this, Vec_copy_t copy_func) {
 	struct vec_internal *internal = (struct vec_internal*) this;
 
@@ -96,16 +89,11 @@ static int Vec_realloc(Vec *this) {
 	
 	void *new_array = this->data;
 
-	if (!internal->allocated) {
-		new_array = malloc(internal->initial_cap * internal->obj_size);
-		internal->allocated = !!new_array;
-	} else if (this->len <= internal->cap) {
-		internal->cap = this->len == 1 ? 2 : this->len + log2i(this->len);
-		new_array = realloc(this->data, internal->cap * internal->obj_size);
-	} else if (
-		this->len > internal->initial_cap &&
-		this->len < internal->cap - log2i(internal->cap) * 2
-	) {
+	if (!this->data) {
+		new_array = malloc(internal->cap * internal->obj_size);
+	} else if (this->len == internal->cap) {
+		new_array = realloc(this->data, (internal->cap += RESIZE_CONSTANT) * internal->obj_size);
+	} else if (this->len > RESIZE_CONSTANT * 2 && this->len < internal->cap - RESIZE_CONSTANT * 2) {
 		new_array = realloc(this->data, (internal->cap = this->len) * internal->obj_size);
 	}
 
