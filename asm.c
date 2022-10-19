@@ -1,3 +1,8 @@
+// Required for strdup in Linux
+#define _GNU_SOURCE
+// Required to use strdup in Windows
+#define _CRT_NONSTDC_NO_WARNINGS
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -37,8 +42,8 @@ static const char *DATA_SPEC[] = {
 
 static const char *HELP = "Usage: %s [infile] [OPTIONS] -o [outfile]\n\t-t\tDisplay time to assemble (in \u03BCs)\n";
 
-static ssize_t index_table(char *str, const char *table[]) {
-	for (ssize_t i = 0; table[i]; ++i)
+static int index_table(char *str, const char *table[]) {
+	for (int i = 0; table[i]; ++i)
 		if (!strcmp(str, table[i])) return i;
 	
 	return -1;
