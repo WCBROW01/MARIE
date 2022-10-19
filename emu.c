@@ -18,8 +18,10 @@ static struct CPU {
 	int16_t AC;
 	uint16_t IR;
 	int16_t MBR;
-	uint16_t PC; // only 12 bits
-	uint16_t MAR; // only 12 bits
+	uint16_t PC  : 12;
+	uint16_t     :  4;
+	uint16_t MAR : 12;
+	uint16_t     :  4;
 	uint8_t InREG;
 	uint8_t OutREG;
 } cpu;
@@ -57,35 +59,35 @@ static void execute(unsigned int flags) {
 		// wait for user to press enter
 		if (flags & FLAG_STEP) while (getchar() != '\n');
 	
-		cpu.MAR = cpu.PC++ & 0x0FFF;
+		cpu.MAR = cpu.PC++;
 		cpu.IR = mem[cpu.MAR];
 		
 		switch (cpu.IR >> 12) {
 			case JNS: {
 				cpu.MBR = cpu.PC;
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				mem[cpu.MAR] = cpu.MBR;
 				cpu.MBR = cpu.IR & 0x0FFF;
-				cpu.AC = ++cpu.MBR;
+				cpu.AC = cpu.MBR + 1;
 				cpu.PC = cpu.AC;
 			} break;
 			case LOAD: {
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.AC = cpu.MBR;
 			} break;
 			case STORE: {
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				cpu.MBR = cpu.AC;
 				mem[cpu.MAR] = cpu.MBR;
 			} break;
 			case ADD: {
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.AC += cpu.MBR;
 			} break;
 			case SUBT: {
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.AC -= cpu.MBR;
 			} break;
@@ -108,32 +110,32 @@ static void execute(unsigned int flags) {
 				}
 			} break;
 			case JUMP: {
-				cpu.PC = cpu.IR & 0x0FFF;
+				cpu.PC = cpu.IR;
 			} break;
 			case CLEAR: {
 				cpu.AC = 0;
 			} break;
 			case ADDI: {
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.MAR = cpu.MBR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.AC += cpu.MBR;
 			} break;
 			case JUMPI: {
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.PC = cpu.MBR;
 			} break;
 			case LOADI: {
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.MAR = cpu.MBR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.AC = cpu.MBR;
 			} break;
 			case STOREI: {
-				cpu.MAR = cpu.IR & 0x0FFF;
+				cpu.MAR = cpu.IR;
 				cpu.MBR = mem[cpu.MAR];
 				cpu.MAR = cpu.MBR;
 				cpu.MBR = cpu.AC;
