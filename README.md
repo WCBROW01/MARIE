@@ -6,7 +6,13 @@ As it currently stands, the emulator is mostly complete, but the assembler is no
 
 ## Building
 
-There is no Makefile yet, but building is still trivial.
+### Using the makefile
+
+running `make` or `make all` will build both the emulator and assembler.
+`make emu` will build the emulator.
+`make asm` will build the assembler.
+
+### Without a makefile
 
 Building the emulator just requires the one source file, so you can just run `cc emu.c -o emu`.
 
