@@ -54,16 +54,21 @@ static int symbol_cmp(const void *p1, const void *p2) {
 
 static inline void add_symbol(char *str, uint16_t addr) {
 	if (num_symbols > 0) {
-		for (struct Symbol *s = symbols; s < symbols + num_symbols; ++s) {
-			if (strcmp(s->key, str) >= 0) {
-				// Shift table to the right
-				memmove(s + 1, s, (symbols + num_symbols - s) * sizeof(struct Symbol));
-				s->key = strdup(str);
-				s->addr = addr;
-				break;
+		if (strcmp(symbols[num_symbols - 1].key, str) < 0) {
+			symbols[num_symbols].key = strdup(str);
+			symbols[num_symbols].addr = addr;
+		} else {
+			for (struct Symbol *s = symbols; s < symbols + num_symbols; ++s) {
+				if (strcmp(s->key, str) >= 0) {
+					// Shift table to the right
+					memmove(s + 1, s, (symbols + num_symbols - s) * sizeof(struct Symbol));
+					s->key = strdup(str);
+					s->addr = addr;
+					break;
+				}
 			}
 		}
-	} else {
+	} else if (num_symbols == 0) {
 		symbols[0].key = strdup(str);
 		symbols[0].addr = addr;
 	}
@@ -99,8 +104,9 @@ static inline void assemble(const char *in_path, const char *out_path) {
 		exit(1);
 	}
 	
+	size_t line_num;
 	uint16_t addr;
-	for (addr = 0; fgets(line, 256, fp); ++addr) {
+	for (line_num = 0, addr = 0; fgets(line, 256, fp); ++line_num, ++addr) {
 		// Crash if address is too large
 		if (addr > 0xFFF) {
 			fputs("Encountered large address. Maximum address is 0xFFF, your program is too large.\n", stderr);
@@ -132,23 +138,29 @@ static inline void assemble(const char *in_path, const char *out_path) {
 			
 			size_t data;
 			strtok(str, " \t"); // delimit at whitespace
-			while (str && *str) {
-				if (!strcmp(str, "ORG")) {
-					addr = strtoul(strtok(NULL ," \t"), NULL, 16) - 1;
-				} else if (!strcmp(str, "END")) {
-					goto end;
-				} else if ((data = index_table(str, DATA_SPEC)) != -1) {
-					program[addr] = strtoul(strtok(NULL, " \t"), NULL, data ? 10 : 16);
-				} else if ((data = index_table(str, INSTRUCTIONS)) != -1) {
-					program[addr] = data << 12;
-					/* Parsing of every operand must be deferred until after
-					 * the symbol table is populated because it is ambiguous
-					 * whether an operand is a symbol or a hexadecimal address. */
-					if (INST_HAS_OP[data]) add_operand(strtok(NULL, " \t"), addr);
+			if (!strcmp(str, "ORG")) {
+				addr = strtoul(str + 4, NULL, 16) - 1;
+			} else if (!strcmp(str, "END")) {
+				goto end;
+			} else if ((data = index_table(str, DATA_SPEC)) != -1) {
+				program[addr] = strtoul(str + 4, NULL, data ? 10 : 16);
+			} else if ((data = index_table(str, INSTRUCTIONS)) != -1) {
+				program[addr] = data << 12;
+				/* Parsing of every operand must be deferred until after
+				 * the symbol table is populated because it is ambiguous
+				 * whether an operand is a symbol or a hexadecimal address. */
+				if (INST_HAS_OP[data]) {
+					str = strtok(NULL, " \t");
+					if (!*str) {
+						++str;
+						TRIM_LEADING_WHITESPACE(str);
+						strtok(str, " \t");
+					}
+					add_operand(str, addr);
 				}
-				
-				str = strtok(NULL, " \t");
-				if (str) TRIM_LEADING_WHITESPACE(str);
+			} else {
+				fprintf(stderr, "%s:%zu: error: invalid instruction\n%s\n", in_path, line_num, str);
+				exit(1);
 			}
 		}
 	}
