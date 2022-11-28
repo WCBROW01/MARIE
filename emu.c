@@ -141,10 +141,7 @@ static void execute(unsigned int flags) {
 				cpu.MBR = cpu.AC;
 				mem[cpu.MAR] = cpu.MBR;
 			} break;
-			default: {
-				fprintf(stderr, "Invalid instruction\n");
-				exit(1);
-			}
+			default: // nop
 		}
 		if (flags & FLAG_REGS) print_cpu_state();
 	}
