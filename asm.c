@@ -12,35 +12,34 @@
 #include <errno.h>
 #include <time.h>
 
-#include "cvector.h"
 #include "shared.h"
-
-#ifndef MARIE_DEBUG
-#define MARIE_DEBUG 0
-#endif
 
 struct Symbol {
 	char *key;
 	uint16_t addr;
 };
 
-enum TokenType {DIRECTIVE, DATA, INST, VALUE, NEXT};
 enum Directive {ORG};
 enum Data {HEX, DEC};
-
-struct Token {
-	union {
-		char *str;
-		int data;
-	} value;
-	enum TokenType type;
-};
 
 static const char *DATA_SPEC[] = {
 	"Hex", "Dec", NULL
 };
 
+static const bool INST_HAS_OP[] = {
+	true, true, true, true, true, false, false, false,
+	true, true, false, true, true, true, true
+};
+
 static const char *HELP = "Usage: %s [infile] [OPTIONS] -o [outfile]\n\t-t\tDisplay time to assemble (in \u03BCs)\n";
+
+static struct Symbol symbols[4096];
+static size_t num_symbols = 0;
+
+static uint16_t program[4096] = {0};
+
+static struct Symbol operands[4096];
+static size_t num_operands = 0;
 
 static int index_table(char *str, const char *table[]) {
 	for (int i = 0; table[i]; ++i)
@@ -53,57 +52,55 @@ static int symbol_cmp(const void *p1, const void *p2) {
 	return strcmp(((struct Symbol *) p1)->key, ((struct Symbol *) p2)->key);
 }
 
-static inline void add_symbol(Vec *symbols, char *str, uint16_t addr) {
-	struct Symbol newSym = {
+static inline void add_symbol(char *str, uint16_t addr) {
+	if (num_symbols > 0) {
+		for (struct Symbol *s = symbols; s < symbols + num_symbols; ++s) {
+			if (strcmp(s->key, str) >= 0) {
+				// Shift table to the right
+				memmove(s + 1, s, (symbols + num_symbols - s) * sizeof(struct Symbol));
+				s->key = strdup(str);
+				s->addr = addr;
+				break;
+			}
+		}
+	} else {
+		symbols[0].key = strdup(str);
+		symbols[0].addr = addr;
+	}
+
+	++num_symbols;
+}
+
+static inline void add_operand(char *str, uint16_t addr) {
+	operands[num_operands++] = (struct Symbol) {
 		.key = strdup(str),
 		.addr = addr
 	};
-	
-	Vec_push(symbols, &newSym);
 }
 
-static int lookup_symbol(Vec *symbols, char *sym) {
+static inline int lookup_symbol(char *sym) {
 	struct Symbol tmp = {.key = sym};
 	struct Symbol *res = bsearch(
-		&tmp, symbols->data, symbols->len, sizeof(struct Symbol), &symbol_cmp
+		&tmp, symbols, num_symbols, sizeof(struct Symbol), &symbol_cmp
 	);
 	
 	return res ? res->addr : -1;
 }
 
-#if MARIE_DEBUG
-static void print_token(struct Token *tok) {
-	const char *str;
-	switch (tok->type) {
-		case DIRECTIVE: str = "ORG"; break;
-		case INST: str = INSTRUCTIONS[tok->value.data]; break;
-		case VALUE: str = tok->value.str; break;
-		case NEXT: str = "NEXT"; break;
-	}
-	if (str) printf("Token: \"%s\", Type: %d\n", str, tok->type);
-	else printf("Token: \"%x\", Type: %d\n", tok->value.data, tok->type);
-}
-
-static void print_tokens(Vec *tokens) {\
-	for (
-		struct Token *tok = tokens->data;
-		tok < (struct Token *) tokens->data + tokens->len;
-		++tok
-	) print_token(tok);
-}
-#endif
-
 #define TRIM_LEADING_WHITESPACE(str) for (; isblank(*(str)); ++(str))
 
-static Vec *tokenize(FILE *fp, Vec *symbols) {
+static inline void assemble(const char *in_path, const char *out_path) {
 	char line[256]; // I hope your symbols aren't this long.
 	char *str = line; // create pointer to more easily mutate the string
-#if MARIE_DEBUG
-	puts("Tokenizing");
-#endif
-	Vec *tokens = Vec(struct Token);
 	
-	for (uint16_t addr = 0; fgets(line, 256, fp); ++addr) {
+	FILE *fp = fopen(in_path, "r");
+	if (!fp) {
+		fprintf(stderr, "Error opening %s: %s\n", in_path, strerror(errno));
+		exit(1);
+	}
+	
+	uint16_t addr;
+	for (addr = 0; fgets(line, 256, fp); ++addr) {
 		// Crash if address is too large
 		if (addr > 0xFFF) {
 			fputs("Encountered large address. Maximum address is 0xFFF, your program is too large.\n", stderr);
@@ -128,120 +125,49 @@ static Vec *tokenize(FILE *fp, Vec *symbols) {
 			char *symbol_end = strchr(str, ',');
 			if (symbol_end) {
 				*symbol_end = '\0';
-				add_symbol(symbols, str, addr);
+				add_symbol(str, addr);
 				str = symbol_end + 1;
 				TRIM_LEADING_WHITESPACE(str);
 			}
 			
-			struct Token token;
+			size_t data;
 			strtok(str, " \t"); // delimit at whitespace
 			while (str && *str) {
 				if (!strcmp(str, "ORG")) {
-					addr = strtoul(str + 4, NULL, 16) - 1;
-					token.type = DIRECTIVE;
-					token.value.data = ORG;
-					Vec_push(tokens, &token);
+					addr = strtoul(strtok(NULL ," \t"), NULL, 16) - 1;
 				} else if (!strcmp(str, "END")) {
-					token.type = NEXT;
-					Vec_push(tokens, &token);
-					goto end; // forcefully end
-				} else if ((token.value.data = index_table(str, DATA_SPEC)) != -1) {
-					token.type = DATA;
-					Vec_push(tokens, &token);
-				} else if ((token.value.data = index_table(str, INSTRUCTIONS)) != -1) {
-					token.type = INST;
-					Vec_push(tokens, &token);
-				} else {
-					token.type = VALUE;
-					token.value.str = strdup(str);
-					Vec_push(tokens, &token);
+					goto end;
+				} else if ((data = index_table(str, DATA_SPEC)) != -1) {
+					program[addr] = strtoul(strtok(NULL, " \t"), NULL, data ? 10 : 16);
+				} else if ((data = index_table(str, INSTRUCTIONS)) != -1) {
+					program[addr] = data << 12;
+					/* Parsing of every operand must be deferred until after
+					 * the symbol table is populated because it is ambiguous
+					 * whether an operand is a symbol or a hexadecimal address. */
+					if (INST_HAS_OP[data]) add_operand(strtok(NULL, " \t"), addr);
 				}
 				
 				str = strtok(NULL, " \t");
 				if (str) TRIM_LEADING_WHITESPACE(str);
 			}
-			
-			token.type = NEXT;
-			Vec_push(tokens, &token);
 		}
 	}
 	
 	end:
-#if MARIE_DEBUG
-	print_tokens(tokens);
-#endif
-
-	// sort symbol list
-	qsort(symbols->data, symbols->len, sizeof(struct Symbol), &symbol_cmp);
-	return tokens;
-}
-
-static void free_tokens(void *ptr) {
-	struct Token *tok = ptr;
-	if (tok->type == VALUE) free(tok->value.str);
-}
-
-static void free_symbols(void *ptr) {
-	free(((struct Symbol *) ptr)->key);
-}
-
-static void assemble(Vec *symbols, Vec *tokens, const char *path) {
-	uint16_t program[4096] = {0};
-	uint16_t addr = 0;
-	uint16_t word = 0;
-	int radix = 16;
-	bool org_changed = false;
-	
-#if MARIE_DEBUG
-	puts("Assembling");
-#endif
-	
-	for (
-		struct Token *tok = tokens->data;
-		tok < (struct Token *) tokens->data + tokens->len;
-		++tok
-	) {
-#if MARIE_DEBUG
-		print_token(tok);
-#endif
-		switch (tok->type) {
-			case DIRECTIVE: {
-				if ((++tok)->type != VALUE) {
-					fputs("Invalid use of \"ORG\" detected.\n", stderr);
-					exit(1);
-				} else {
-					uint16_t addr_old = addr;
-					addr = strtoul(tok->value.str, NULL, 16);
-					if (addr < addr_old) {
-						fprintf(stderr, 
-							"ORG used to jump to an address lower than the current one. Only in-order uses of ORG are valid.\n"
-							"Old address: %x\nNew address: %x\n", addr_old, addr
-						);
-						exit(1);
-					} else org_changed = true;
-				}
-			} break;
-			// 0: hex, 1: dec
-			case DATA: if (tok->value.data) radix = 10; break;
-			case INST: word = tok->value.data << 12; break;
-			case VALUE: {
-				int lookup_res = lookup_symbol(symbols, tok->value.str);
-				if (lookup_res != -1) word |= lookup_res;
-				else word |= strtoul(tok->value.str, NULL, radix);
-				radix = 16;
-			} break;
-			case NEXT: {
-				if (!org_changed) program[addr++] = word;
-				else org_changed = false;
-				word = 0;
-			}
-		}
-#if MARIE_DEBUG
-		printf("Addr: %x, Word: %x\n", addr, word);
-#endif		
+	// Insert operands into program
+	for (struct Symbol *s = operands; s < operands + num_operands; ++s) {
+		int sym = lookup_symbol(s->key);
+		program[s->addr] |= sym == -1 ? strtoul(s->key, NULL, 16) : sym;
 	}
 	
-	FILE *fp = fopen(path, "w");
+	// Replace file descriptor for input with output, and write the file.
+	fclose(fp);
+	fp = fopen(out_path, "w");
+	if (!fp) {
+		fprintf(stderr, "Error opening %s: %s\n", out_path, strerror(errno));
+		exit(1);
+	}
+	
 	fwrite(program, sizeof(uint16_t), addr, fp);
 	fclose(fp);
 }
@@ -289,23 +215,10 @@ int main(int argc, char *argv[]) {
 	}
 	
 	clock_t start = clock();
-	FILE *fp = fopen(in_path, "r");
-	if (!fp) {
-		fprintf(stderr, "Error opening %s: %s\n", in_path, strerror(errno));
-		return 1;
-	}
-	
-	Vec *symbols = Vec(struct Symbol);
-	Vec *tokens = tokenize(fp, symbols);
-	fclose(fp);
-	assemble(symbols, tokens, out_path);
+	assemble(in_path, out_path);
 	clock_t end = clock();
 	
 	if (profile_time) print_exec_time(end - start);
 	
-	// free resources
-	Vec_destroy(tokens, &free_tokens);
-	Vec_destroy(symbols, &free_symbols);
-	if (generated_path) free(out_path);
 	return 0;
 }

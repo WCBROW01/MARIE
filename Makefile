@@ -4,8 +4,8 @@ all: emu asm
 
 emu: emu.o
 
-asm: asm.o cvector.o
+asm: asm.o
 
 .PHONY: clean
 clean:
-	rm -f emu asm emu.o asm.o cvector.o
+	rm -f emu asm emu.o asm.o
