@@ -16,6 +16,4 @@ running `make` or `make all` will build both the emulator and assembler.
 
 Building the emulator just requires the one source file, so you can just run `cc emu.c -o emu`.
 
-The assembler currently requires my [cvector](https://github.com/WCBROW01/cvector) library, but the current approach I'm taking is needlessly complex, so this dependency will likely disappear. This library consists of a single source and header file, so it only requires one extra file.
-
 It can be built by running `cc asm.c cvector.c -o asm`.
