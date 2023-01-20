@@ -2,8 +2,6 @@
 
 An emulator and assembler for the MARIE toy ISA (Instruction Set Architecture), found in the book *Essentials of Computer Organization and Architecture* by Linda Null and Julia Lobur. (ISBN-13: 978-1284123036, ISBN-10: 1284123030)
 
-As it currently stands, the emulator is mostly complete, but the assembler is not. However, they are both in a usable enough state to run any of the example programs you might see in the book.
-
 ## Building
 
 ### Using the makefile
@@ -15,5 +13,4 @@ running `make` or `make all` will build both the emulator and assembler.
 ### Without a makefile
 
 Building the emulator just requires the one source file, so you can just run `cc emu.c -o emu`.
-
-It can be built by running `cc asm.c cvector.c -o asm`.
+The assembler can be built by running `cc asm.c -o asm`.
